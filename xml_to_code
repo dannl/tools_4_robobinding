@@ -1,0 +1,288 @@
+#!/usr/bin/python
+import sys
+import xml.etree.ElementTree as ET
+import re
+
+
+ROBOBINDING_PATTERN = re.compile("{http://robobinding.org/android}(.+)")
+ONEWAY_PROPERTY_PATTERN = re.compile("{(.+)}")
+TWOWAY_PROPERTY_PATTERN = re.compile("\${(.+)}")
+ABSTRACT_PRESENTATION_MODEL = ""
+ACCESS_PUBLIC = "public"
+ACCESS_PRIVATE = "private"
+SET_FORMAT = "%s = %s;"
+GET_FORMAT = "return %s"
+DEFAULT_TYPE_MAP = {}
+DEFAULT_TYPE_MAP["text"] = "String"
+DEFAULT_TYPE_MAP["checkedItemCount"] = "int"
+DEFAULT_TYPE_MAP["checkedItemIds"] = "long[]"
+DEFAULT_TYPE_MAP["checkedItemPosition"] = "int"
+DEFAULT_TYPE_MAP["checkedItemPositions"] = "SparseBooleanArray"
+DEFAULT_TYPE_MAP["filterText"] = "String"
+DEFAULT_TYPE_MAP["dropdownLayout"] = "int"
+DEFAULT_TYPE_MAP["selectedItemPosition"] = "int"
+DEFAULT_TYPE_MAP["selectedItem"] = "Object"
+DEFAULT_TYPE_MAP["selectedItemId"] = "long"
+DEFAULT_TYPE_MAP["source"] = "List<? extends Object>"
+DEFAULT_TYPE_MAP["itemLayout"] = "int"
+DEFAULT_TYPE_MAP["checked"] = "boolean"
+DEFAULT_TYPE_MAP["header"] = "AbstractPresentationModel"
+DEFAULT_TYPE_MAP["headerLayout"] = "int"
+DEFAULT_TYPE_MAP["footer"] = "AbstractPresentationModel"
+DEFAULT_TYPE_MAP["footerLayout"] = "int"
+DEFAULT_TYPE_MAP["enabled"] = "boolean"
+DEFAULT_TYPE_MAP["selected"] = "boolean"
+DEFAULT_TYPE_MAP["backgroundColor"] = "int"
+DEFAULT_TYPE_MAP["visibility"] = "int"
+DEFAULT_TYPE_MAP["textColor"] = "int"
+
+DEFAULT_IMPORT_MAP = {}
+DEFAULT_IMPORT_MAP["AbstractPresentationModel"] = "org.robobinding.presentationmodel.AbstractPresentationModel"
+DEFAULT_IMPORT_MAP["List<? extends Object>"] = "java.util.List"
+DEFAULT_IMPORT_MAP["SparseBooleanArray"] = "android.util.SparseBooleanArray"
+
+
+
+class BadArgumentErr(Exception):
+
+	def __init__(self, value):
+		self.value = value
+	
+	def __str__(self):
+		return repr(self.value)
+
+class Robobinding(object):
+	"""docstring for Robobinding"""
+	def __init__(self, arg):
+		super(Robobinding, self).__init__()
+		self.arg = arg
+
+class Field(object):
+	access = ""
+	type = ""
+	name = ""
+
+	"""docstring for Field"""
+	def __init__(self, access, type, name):
+		self.access = access
+		self.type = type
+		self.name = name	
+
+	def writeTo(self, destFile):
+		destFile.write("    " + self.access + " " + self.type + " " + self.name + ";\n")
+
+
+class MethodParam(object):
+	type = ""
+	name = ""
+	"""docstring for MethodParam"""
+	def __init__(self, type, name):
+		self.type = type
+		self.name = name		
+
+class Method(object):
+	access = ""
+	returnType = ""
+	name = ""
+	params = []
+	body = []
+	def __init__(self, access, returnType, name, params, body):
+		self.access = access
+		self.returnType = returnType
+		self.name = name
+		self.params = params		
+		self.body = body
+
+	def writeTo(self, destFile):
+		destFile.write("    " + self.access + " " + self.returnType + " " + self.name + "(")
+		paramsString = ""
+		for param in self.params:
+			paramsString += param.type + " " + param.name + ","
+		if len(paramsString) > 0:
+			destFile.write(paramsString[:-1])
+		destFile.write(") {\n")
+		for bodyLine in self.body:
+			destFile.write("        " + bodyLine)
+		destFile.write("\n    }\n\n")
+
+class JavaDoc(object):
+	destFile = ""
+	packageName = ""
+	imports = []
+	className = ""
+	methods = []
+	fields = []
+
+	def __init__(self, destFile):
+		if not re.search(".*java", destFile):
+			raise BadArgumentErr("the dest file: " + destFile + " is not end with .java")
+		paths = re.split("/", destFile)
+		packageName = ""
+		packageAppendStarted = False
+		className = ""
+		self.destFile = destFile
+
+		for path in paths:
+			if packageAppendStarted:
+				if re.search(".*java", path):
+					className = re.search("(.*)\.java", path).group(1)
+				else:
+					packageName += path + "."
+			elif path == "src":
+				packageAppendStarted = True
+		packageName = packageName[:-1]
+		self.packageName = packageName
+		self.className = className
+
+	def addField(self, field):
+		for f in self.fields:
+			if f.name == field.name:
+				return
+		self.fields.append(field)
+
+	def addImport(self, _import):
+		for i in self.imports:
+			if i == _import:
+				return
+		self.imports.append(_import)
+
+	def addMethod(self, method):
+		for m in self.methods:
+			if m.name == method.name:
+				return
+		self.methods.append(method)
+
+	def write(self):
+		destFile = open(self.destFile, "w+")
+		print "====write package name===="
+		destFile.write("package " + self.packageName + ";\n")
+		destFile.write("\n\n")
+		for _import in self.imports:
+			print "===write import " + _import + "==="
+			destFile.write("import " + _import + ";\n")
+		destFile.write("public class " + self.className + " extends AbstractPresentationModel {\n")
+		for field in self.fields:
+			print "===write field " + field.name + "==="
+			field.writeTo(destFile)
+		for method in self.methods:
+			print "===write method " + method.name + "==="
+			method.writeTo(destFile)
+		destFile.write("\n}")
+		destFile.close()
+		print "========write to file over====="
+
+class RobobindingProperty(object):
+	view = ""
+	property = ""
+	value = ""
+	def __init__(self, view, property, value):
+		self.view = view
+		self.property = property
+		self.value = value
+
+class RobobindingData(object):
+	one_way_properties = {}
+	two_way_properties = {}
+	methods = {}
+	"""docstring for RobobindingData"""
+	def __init__(self):
+		pass
+
+	def addOneWayProperty(self, property):
+		self.one_way_properties[property.value] = property
+
+	def addTwoWayProperty(self, property):
+		self.two_way_properties[property.value] = property
+
+	def addMethod(self, property):
+		self.methods[property.value] = property
+
+def readXml(xml, robobindingData):
+	for child in xml:
+		readXml(child, robobindingData)
+	for key in xml.attrib.viewkeys():
+		keyMatch = re.search(ROBOBINDING_PATTERN, key)
+		if keyMatch:
+			property = keyMatch.group(1)
+			value = xml.attrib[key]
+			view = xml.tag
+			if re.search(ONEWAY_PROPERTY_PATTERN, value):
+				value = re.search(ONEWAY_PROPERTY_PATTERN, value).group(1)
+				robobindingData.addOneWayProperty(RobobindingProperty(view, property, value))
+			elif TWOWAY_PROPERTY_PATTERN.match(value):
+				value = re.search(TWOWAY_PROPERTY_PATTERN, value).group(1)
+				robobindingData.addTwoWayProperty(RobobindingProperty(view, property, value))
+			else:
+				robobindingData.addMethod(RobobindingProperty(view, property, value))
+
+def findTypeForProperty(property, view, rootPath):
+	if DEFAULT_TYPE_MAP.has_key(property):
+		return DEFAULT_TYPE_MAP.get(property)
+	else:
+		#try to find the property in the fucking source code...
+		return "void"
+
+def findImport(type):
+	if DEFAULT_IMPORT_MAP.has_key(type):
+		return DEFAULT_IMPORT_MAP.get(type)
+	else:
+		return ""
+
+if __name__ == '__main__':
+	args = sys.argv
+	if len(args) != 3:
+		raise BadArgumentErr("we must have two arguments!")
+
+	src = args[1]
+	dest = args[2]
+
+	srcPattern = re.compile("(.*)res/layout/(.*)")
+	destPattern = re.compile("(.*)src/(.*)")
+	if not re.match(srcPattern, src):
+		raise BadArgumentErr(src + " is not a android layout file!")
+	if not re.match(destPattern, dest):
+		raise BadArgumentErr(dest + " is not a android code file!")
+
+	root = re.search(srcPattern, src).group(1)
+
+	resultJavaDoc = JavaDoc(dest)
+	robobindingData = RobobindingData()
+
+	xml_tree = ET.parse(src)
+	xmlRoot = xml_tree.getroot()
+	readXml(xmlRoot, robobindingData)
+
+	resultJavaDoc.addImport("org.robobinding.presentationmodel.AbstractPresentationModel")
+
+	for pro in robobindingData.one_way_properties.viewvalues():
+		type = findTypeForProperty(pro.property, pro.view, root)
+		realFieldName = "m" + pro.value[:1].upper() + pro.value[1:]
+		resultJavaDoc.addField(Field(ACCESS_PRIVATE, type, realFieldName))
+		method = Method(ACCESS_PUBLIC, type, "get" + pro.value[:1].upper() + pro.value[1:], [], ["return " + realFieldName + ";"])
+		resultJavaDoc.addMethod(method)
+		if findImport(type):
+			resultJavaDoc.addImport(findImport(type))
+
+
+	for pro in robobindingData.two_way_properties.viewvalues():
+		type = findTypeForProperty(pro.property, pro.view, root)
+		realFieldName = "m" + pro.value[:1].upper() + pro.value[1:]
+		resultJavaDoc.addField(Field(ACCESS_PRIVATE, type, realFieldName))
+		method = Method(ACCESS_PUBLIC, type, "get" + pro.value[:1].upper() + pro.value[1:], [], ["return " + realFieldName + ";"])
+		resultJavaDoc.addMethod(method)
+		method = Method(ACCESS_PUBLIC, "void", "set" + pro.value[:1].upper() + pro.value[1:], [MethodParam(type, pro.value)], [realFieldName + " = " + pro.value + ";"])
+		resultJavaDoc.addMethod(method)
+		if findImport(type):
+			resultJavaDoc.addImport(findImport(type))
+
+	for method in robobindingData.methods.viewvalues():
+		type = "void"
+		method = Method(ACCESS_PUBLIC, type, method.value, [], [])
+		resultJavaDoc.addMethod(method)
+
+	resultJavaDoc.write()
+
+
+
+
+
