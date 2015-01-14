@@ -258,7 +258,10 @@ if __name__ == '__main__':
 		type = findTypeForProperty(pro.property, pro.view, root)
 		realFieldName = "m" + pro.value[:1].upper() + pro.value[1:]
 		resultJavaDoc.addField(Field(ACCESS_PRIVATE, type, realFieldName))
-		method = Method(ACCESS_PUBLIC, type, "get" + pro.value[:1].upper() + pro.value[1:], [], ["return " + realFieldName + ";"])
+		if type == "boolean":
+			method = Method(ACCESS_PUBLIC, type, "is" + pro.value[:1].upper() + pro.value[1:], [], ["return " + realFieldName + ";"])
+		else:
+			method = Method(ACCESS_PUBLIC, type, "get" + pro.value[:1].upper() + pro.value[1:], [], ["return " + realFieldName + ";"])
 		resultJavaDoc.addMethod(method)
 		if findImport(type):
 			resultJavaDoc.addImport(findImport(type))
@@ -268,7 +271,10 @@ if __name__ == '__main__':
 		type = findTypeForProperty(pro.property, pro.view, root)
 		realFieldName = "m" + pro.value[:1].upper() + pro.value[1:]
 		resultJavaDoc.addField(Field(ACCESS_PRIVATE, type, realFieldName))
-		method = Method(ACCESS_PUBLIC, type, "get" + pro.value[:1].upper() + pro.value[1:], [], ["return " + realFieldName + ";"])
+		if type == "boolean":
+			method = Method(ACCESS_PUBLIC, type, "is" + pro.value[:1].upper() + pro.value[1:], [], ["return " + realFieldName + ";"])
+		else:
+			method = Method(ACCESS_PUBLIC, type, "get" + pro.value[:1].upper() + pro.value[1:], [], ["return " + realFieldName + ";"])
 		resultJavaDoc.addMethod(method)
 		method = Method(ACCESS_PUBLIC, "void", "set" + pro.value[:1].upper() + pro.value[1:], [MethodParam(type, pro.value)], [realFieldName + " = " + pro.value + ";"])
 		resultJavaDoc.addMethod(method)
